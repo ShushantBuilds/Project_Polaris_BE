@@ -1,6 +1,30 @@
+# Virtual Environment
 venv/
+env/
+
+# Python Caches
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Secrets & Databases
 .env
 *.sqlite3
+db.sqlite3
+
+# Django Media & Static
 media/
+staticfiles/
+static_root/
+
+# Logs & Testing
+*.log
+.pytest_cache/
+.coverage
+
+# OS & Editor
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
