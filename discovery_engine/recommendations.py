@@ -1,10 +1,27 @@
-# discovery_engine/recommendations.py
 from collections import Counter
 from django.db.models import Count, Max, F
 from .models import ContentItem, Interaction
+from .embeddings import cosine_similarity
+import numpy as np
 
+EMBEDDING_WEIGHT = 2.0
 WEIGHTS = {'VIEW': 1, 'CLICK': 2, 'LIKE': 3}
 EXPLICIT_WEIGHT = 3
+
+def _get_user_embedding(interactions):
+    weighted_vectors = []
+    strong_types = {'LIKE': 3, 'SAVE': 3, 'UPVOTE': 2}
+    for interaction in interactions:
+        weight = strong_types.get(interaction.interaction_type)
+        if weight and interaction.content_item.embedding:
+            weighted_vectors.append((np.array(interaction.content_item.embedding), weight))
+    if not weighted_vectors:
+        return None
+    total_weight = sum(w for _, w in weighted_vectors)
+    combined = sum(vec * w for vec, w in weighted_vectors) / total_weight
+    norm = np.linalg.norm(combined)
+    return (combined / norm).tolist() if norm > 0 else None
+
 
 def get_recommendations(user, limit=10):
     profile = user.profile
@@ -35,16 +52,18 @@ def get_recommendations(user, limit=10):
         return [{'item': item, 'score': (item.pop / max_pop) if max_pop else 0.3} for item in items]
 
     # Tiers 2 & 3: weighted tag-overlap scoring
+    user_embedding = _get_user_embedding(interactions)
     candidates = ContentItem.objects.exclude(id__in=seen_ids).prefetch_related('tags')
     scored = []
     for item in candidates:
         tag_score = sum(tag_scores.get(t.id, 0) for t in item.tags.all())
-        if tag_score > 0:
+        semantic_score = cosine_similarity(user_embedding, item.embedding) * EMBEDDING_WEIGHT if (user_embedding and item.embedding) else 0
+        combined_score = tag_score + semantic_score
+        if combined_score > 0:
             net_votes = item.upvotes - item.downvotes
-            vote_multiplier = max(1 + (net_votes * 0.05), 0.1)  # each net vote nudges ~5%; never fully zeroes out
-            scored.append((tag_score * vote_multiplier, item))
+            vote_multiplier = max(1 + (net_votes * 0.05), 0.1)
+            scored.append((combined_score * vote_multiplier, item))
     scored.sort(key=lambda pair: pair[0], reverse=True)
-    results = [{'item': item, 'score': score} for score, item in scored[:limit]]
 
     if len(results) < limit:
         used_ids = {r['item'].id for r in results}

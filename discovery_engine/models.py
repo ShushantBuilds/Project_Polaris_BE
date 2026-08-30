@@ -4,6 +4,7 @@ from django.dispatch import receiver
 from django.conf import settings
 from django.contrib.postgres.indexes import GinIndex
 from django.contrib.postgres.search import SearchVectorField
+from django.contrib.postgres.fields import ArrayField
 
 @receiver(post_save, sender=settings.AUTH_USER_MODEL)
 def create_user_profile(sender, instance, created, **kwargs):
@@ -33,6 +34,8 @@ class ContentItem(models.Model):
     search_vector = SearchVectorField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     external_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
+    embedding = ArrayField(models.FloatField(), size=384, null=True, blank=True)
+    ai_summary = models.TextField(blank=True, null=True)
 
     class Meta:
         # Gin Indexing

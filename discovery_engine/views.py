@@ -5,8 +5,10 @@ from rest_framework import viewsets, permissions
 from .models import Tag, ContentItem, UserProfile, Interaction
 from .serializers import TagSerializer, ContentItemSerializer, UserProfileSerializer, InteractionSerializer
 from .recommendations import get_recommendations
-from django.db.models import F
+from django.db.models import F, Case, When
 from django.db import transaction
+from .embeddings import compute_embedding, cosine_similarity
+from .ingestion import fetch_and_ingest
 
 class TagViewSet(viewsets.ModelViewSet):
     queryset = Tag.objects.all()
@@ -47,23 +49,45 @@ class RecommendationView(APIView):
         ]
         return Response(data)
 
-class ContentItemViewSet(viewsets.ModelViewSet):
-    queryset = ContentItem.objects.all()
-    serializer_class = ContentItemSerializer
-    permission_classes = [permissions.IsAuthenticated]
 
-    def get_queryset(self):
-        queryset = ContentItem.objects.all()
-        q = self.request.query_params.get('search')
-        if q:
-            query = SearchQuery(q)
-            queryset = queryset.filter(search_vector=query).annotate(rank=SearchRank('search_vector', query)).order_by('-rank')
-        return queryset
-    
+class ContentItemViewSet(viewsets.ModelViewSet):
+    serializer_class = ContentItemSerializer
+
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
             return [permissions.AllowAny()]
         return [permissions.IsAuthenticated()]
+
+    def get_queryset(self):
+        queryset = ContentItem.objects.all()
+        q = self.request.query_params.get('search')
+        if not q:
+            return queryset
+
+        query = SearchQuery(q)
+        keyword_results = queryset.filter(search_vector=query).annotate(rank=SearchRank('search_vector', query)).order_by('-rank')
+        if keyword_results.exists():
+            return keyword_results
+
+        semantic_results = self._semantic_search(q)
+        if semantic_results.exists():
+            return semantic_results
+
+        fetch_and_ingest(q, per_page=10, sort_by_recency=False)  # nothing local at all — fetch live, cache permanently
+        return self._semantic_search(q)
+
+    def _semantic_search(self, query_text, limit=20, min_similarity=0.25):
+        query_vector = compute_embedding(query_text)
+        candidates = ContentItem.objects.exclude(embedding__isnull=True)
+        scored = []
+        for item in candidates:
+            sim = cosine_similarity(query_vector, item.embedding)
+            if sim >= min_similarity:
+                scored.append((sim, item))
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        ids_in_order = [item.id for _, item in scored[:limit]]
+        preserved_order = Case(*[When(pk=pk, then=pos) for pos, pk in enumerate(ids_in_order)])
+        return ContentItem.objects.filter(id__in=ids_in_order).order_by(preserved_order)
 
 
 class ToggleInteractionView(APIView):

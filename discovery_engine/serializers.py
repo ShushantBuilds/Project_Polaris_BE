@@ -14,7 +14,7 @@ class ContentItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ContentItem
-        fields = ['id', 'title', 'description', 'url', 'tags', 'upvotes', 'downvotes', 'is_liked', 'is_saved', 'user_vote', 'created_at']
+        fields = ['id', 'title', 'description', 'url', 'tags', 'upvotes', 'downvotes', 'ai_summary', 'is_liked', 'is_saved', 'user_vote', 'created_at']
 
     def get_is_liked(self, obj):
         user = self.context.get('request') and self.context['request'].user
