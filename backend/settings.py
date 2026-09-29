@@ -33,7 +33,11 @@ MISTRAL_API_KEY = config('MISTRAL_API_KEY')
 MAX_CONTENT_ITEMS = config('MAX_CONTENT_ITEMS', default=3000, cast=int)
 OPENALEX_CONTACT_EMAIL = config('OPENALEX_CONTACT_EMAIL')
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    'localhost',
+    '*',
+    '127.0.0.1',
+]
 
 
 # Application definition
@@ -179,3 +183,5 @@ DEFAULT_FROM_EMAIL = 'noreply@projectpolaris.com'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

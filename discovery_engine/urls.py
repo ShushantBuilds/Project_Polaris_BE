@@ -14,4 +14,5 @@ urlpatterns = [
     path('content-items/<int:content_item_id>/toggle/', ToggleInteractionView.as_view(), name='toggle_interaction'),
     path('content-items/<int:content_item_id>/vote/', VoteView.as_view(), name='vote_on_item'),
     path('my-library/', MyLibraryView.as_view(), name='my_library'),
+    path('daily-search-suggestions/', DailySearchSuggestionsView.as_view(), name='daily_search_suggestions'),
 ]

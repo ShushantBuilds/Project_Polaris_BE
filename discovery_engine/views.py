@@ -5,10 +5,12 @@ from rest_framework import viewsets, permissions
 from .models import Tag, ContentItem, UserProfile, Interaction
 from .serializers import TagSerializer, ContentItemSerializer, UserProfileSerializer, InteractionSerializer
 from .recommendations import get_recommendations
-from django.db.models import F, Case, When
+from django.db.models import F, Case, When, Count
 from django.db import transaction
 from .embeddings import compute_embedding, cosine_similarity
 from .ingestion import fetch_and_ingest
+import random
+from datetime import date
 
 class TagViewSet(viewsets.ModelViewSet):
     queryset = Tag.objects.all()
@@ -161,3 +163,22 @@ class MyLibraryView(APIView):
             'liked': ContentItemSerializer(ContentItem.objects.filter(id__in=liked_ids), many=True, context=context).data,
             'saved': ContentItemSerializer(ContentItem.objects.filter(id__in=saved_ids), many=True, context=context).data,
         })
+
+class DailySearchSuggestionsView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        eligible_tags = list(
+            Tag.objects.filter(category='GENRE')
+            .annotate(item_count=Count('content_items'))
+            .filter(item_count__gte=3)
+            .values_list('name', flat=True)
+        )
+        
+        if not eligible_tags:
+            return Response([])
+
+        rng = random.Random(date.today().isoformat()) 
+        count = min(4, len(eligible_tags))
+        
+        return Response(rng.sample(eligible_tags, count))

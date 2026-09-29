@@ -40,3 +40,6 @@ def enrich_content_item(item):
             tag = Tag.objects.filter(name__iexact=tag_name, category='GENRE').first() \
                   or Tag.objects.create(name=tag_name, category='GENRE')
             item.tags.add(tag)
+
+
+            

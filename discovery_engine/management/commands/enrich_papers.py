@@ -1,6 +1,7 @@
 from django.core.management.base import BaseCommand
 from discovery_engine.models import ContentItem
 from discovery_engine.ai_enrichment import enrich_content_item
+import time  
 
 BATCH_SIZE = 20
 
@@ -14,6 +15,7 @@ class Command(BaseCommand):
             try:
                 enrich_content_item(item)
                 count += 1
+                time.sleep(2)  
             except Exception as e:
                 self.stderr.write(f"Failed to enrich '{item.title}': {e}")
         self.stdout.write(self.style.SUCCESS(f"Enriched {count} content items."))

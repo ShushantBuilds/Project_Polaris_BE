@@ -1,4 +1,3 @@
-# discovery_engine/management/commands/prune_stale_tags.py
 from django.core.management.base import BaseCommand
 from discovery_engine.models import Tag
 

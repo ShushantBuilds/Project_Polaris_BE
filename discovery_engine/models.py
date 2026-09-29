@@ -4,7 +4,8 @@ from django.dispatch import receiver
 from django.conf import settings
 from django.contrib.postgres.indexes import GinIndex
 from django.contrib.postgres.search import SearchVectorField
-from django.contrib.postgres.fields import ArrayField
+# from django.contrib.postgres.fields import ArrayField
+from pgvector.django import VectorField, HnswIndex
 
 @receiver(post_save, sender=settings.AUTH_USER_MODEL)
 def create_user_profile(sender, instance, created, **kwargs):
@@ -34,13 +35,20 @@ class ContentItem(models.Model):
     search_vector = SearchVectorField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     external_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
-    embedding = ArrayField(models.FloatField(), size=384, null=True, blank=True)
+    embedding = VectorField(dimensions=384, null=True, blank=True)
     ai_summary = models.TextField(blank=True, null=True)
 
     class Meta:
         # Gin Indexing
         indexes = [
-            GinIndex(fields=['search_vector'], name='search_vector_idx')
+            GinIndex(fields=['search_vector'], name='search_vector_idx'),
+            HnswIndex(
+                name='embedding_hnsw_idx',
+                fields=['embedding'],
+                m=16,
+                ef_construction=64,
+                opclasses=['vector_cosine_ops']
+            )
         ]
 
     def __str__(self):

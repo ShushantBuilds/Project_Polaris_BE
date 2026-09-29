@@ -64,6 +64,7 @@ def fetch_and_ingest(query_text, per_page=10, sort_by_recency=True, tag_with_que
         item = ContentItem.objects.create(
             title=title,
             description=abstract[:2000] if abstract else 'No abstract available.',
+            ai_summary=abstract if abstract else 'No abstract available.',
             url=url,
             external_id=external_id,
         )
