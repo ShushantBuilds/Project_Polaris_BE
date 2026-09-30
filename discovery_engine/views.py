@@ -1,13 +1,16 @@
+from rest_framework.throttling import ScopedRateThrottle
 from django.contrib.postgres.search import SearchQuery, SearchRank
+from pgvector.django import CosineDistance
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import viewsets, permissions
+from .pagination import StandardResultsSetPagination
 from .models import Tag, ContentItem, UserProfile, Interaction
 from .serializers import TagSerializer, ContentItemSerializer, UserProfileSerializer, InteractionSerializer
 from .recommendations import get_recommendations
 from django.db.models import F, Case, When, Count
 from django.db import transaction
-from .embeddings import compute_embedding, cosine_similarity
+from .embeddings import compute_embedding
 from .ingestion import fetch_and_ingest
 import random
 from datetime import date
@@ -17,10 +20,10 @@ class TagViewSet(viewsets.ModelViewSet):
     serializer_class = TagSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-class ContentItemViewSet(viewsets.ModelViewSet):
-    queryset = ContentItem.objects.all()
-    serializer_class = ContentItemSerializer
-    permission_classes = [permissions.IsAuthenticated]
+# class ContentItemViewSet(viewsets.ModelViewSet):
+#     queryset = ContentItem.objects.all()
+#     serializer_class = ContentItemSerializer
+#     permission_classes = [permissions.IsAuthenticated]
 
 class UserProfileViewSet(viewsets.ModelViewSet):
     serializer_class = UserProfileSerializer
@@ -54,6 +57,9 @@ class RecommendationView(APIView):
 
 class ContentItemViewSet(viewsets.ModelViewSet):
     serializer_class = ContentItemSerializer
+    pagination_class = StandardResultsSetPagination
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'ai_search'
 
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
@@ -78,18 +84,17 @@ class ContentItemViewSet(viewsets.ModelViewSet):
         fetch_and_ingest(q, per_page=10, sort_by_recency=False)  # nothing local at all — fetch live, cache permanently
         return self._semantic_search(q)
 
-    def _semantic_search(self, query_text, limit=20, min_similarity=0.25):
+    def _semantic_search(self, query_text, limit=20, max_distance=0.75):
         query_vector = compute_embedding(query_text)
-        candidates = ContentItem.objects.exclude(embedding__isnull=True)
-        scored = []
-        for item in candidates:
-            sim = cosine_similarity(query_vector, item.embedding)
-            if sim >= min_similarity:
-                scored.append((sim, item))
-        scored.sort(key=lambda pair: pair[0], reverse=True)
-        ids_in_order = [item.id for _, item in scored[:limit]]
-        preserved_order = Case(*[When(pk=pk, then=pos) for pos, pk in enumerate(ids_in_order)])
-        return ContentItem.objects.filter(id__in=ids_in_order).order_by(preserved_order)
+        
+        results = (
+            ContentItem.objects
+            .exclude(embedding__isnull=True)
+            .annotate(distance=CosineDistance('embedding', query_vector))
+            .filter(distance__lte=max_distance)
+            .order_by('distance')
+        )
+        return results
 
 
 class ToggleInteractionView(APIView):

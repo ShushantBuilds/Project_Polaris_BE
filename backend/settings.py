@@ -123,6 +123,18 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'accounts.authentication.CustomJWTAuthentication',
     ),
+    'DEFAULT_PAGINATION_CLASSES': (
+        'discovery_engine.pagination.StandardResultsSetPagination',
+    ),
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle'
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '20/minute',
+        'user': '70/minute',
+        'ai_search': '10/minute',
+    }
 }
 
 SIMPLE_JWT = {
