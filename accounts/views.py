@@ -15,6 +15,9 @@ User = get_user_model()
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [permissions.AllowAny]
+    def perform_create(self, serializer):
+        user = serializer.save()
+        send_welcome_email(user.email, user.first_name)
 
 class VerifyOTPView(APIView):
     permission_classes = [permissions.AllowAny]

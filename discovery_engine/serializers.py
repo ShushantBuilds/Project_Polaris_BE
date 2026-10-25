@@ -8,6 +8,7 @@ class TagSerializer(serializers.ModelSerializer):
 
 
 class ContentItemSerializer(serializers.ModelSerializer):
+    tags = TagSerializer(many=True, read_only=True)
     is_liked = serializers.SerializerMethodField()
     is_saved = serializers.SerializerMethodField()
     user_vote = serializers.SerializerMethodField()
@@ -43,3 +44,5 @@ class InteractionSerializer(serializers.ModelSerializer):
         model = Interaction
         fields = ['id', 'content_item', 'interaction_type', 'timestamp']
         read_only_fields = ['timestamp']
+
+
