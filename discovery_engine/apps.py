@@ -1,4 +1,5 @@
 import os
+import sys
 from django.apps import AppConfig
 
 class DiscoveryEngineConfig(AppConfig):
@@ -6,7 +7,12 @@ class DiscoveryEngineConfig(AppConfig):
     name = 'discovery_engine'
 
     def ready(self):
-        if os.environ.get('RUN_MAIN') != 'true':
-            return  
+        is_dev_server = 'runserver' in sys.argv
+        is_gunicorn = any('gunicorn' in arg for arg in sys.argv)
+        if is_dev_server and os.environ.get('RUN_MAIN') != 'true':
+            return
+        if not is_dev_server and not is_gunicorn:
+            return
+
         from . import scheduler
         scheduler.start()
