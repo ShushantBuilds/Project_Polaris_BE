@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: polaris-api
+    env: python
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn core.wsgi:application --bind 0.0.0.0:$PORT"
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: polaris-redis
+          property: connectionString
+      - key: PYTHON_VERSION
+        value: 3.11.0
+
+  - type: worker
+    name: polaris-worker
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python manage.py rqworker default emails"
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: polaris-redis
+          property: connectionString
+      - key: PYTHON_VERSION
+        value: 3.11.0
+
+  - type: redis
+    name: polaris-redis
+    ipAllowList: [] 
