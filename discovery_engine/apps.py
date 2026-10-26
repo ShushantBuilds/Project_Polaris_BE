@@ -1,5 +1,6 @@
 import os
 import sys
+import threading
 from django.apps import AppConfig
 
 class DiscoveryEngineConfig(AppConfig):
@@ -15,4 +16,4 @@ class DiscoveryEngineConfig(AppConfig):
             return
 
         from . import scheduler
-        scheduler.start()
+        threading.Timer(2.0, scheduler.start).start()
