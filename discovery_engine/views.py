@@ -54,6 +54,9 @@ class RecommendationView(APIView):
 
 
 class ContentItemViewSet(viewsets.ModelViewSet):
+    # ADDING THIS ATTRIBUTE fixes the AssertionError permanently
+    queryset = ContentItem.objects.all()
+    
     serializer_class = ContentItemSerializer
     pagination_class = StandardResultsSetPagination
     throttle_classes = [ScopedRateThrottle]
@@ -65,24 +68,28 @@ class ContentItemViewSet(viewsets.ModelViewSet):
         return [permissions.IsAuthenticated()]
 
     def get_queryset(self):
+        # Override the base queryset to inject our custom AI search logic
         queryset = ContentItem.objects.all()
         q = self.request.query_params.get('search')
+        
         if not q:
             return queryset
 
-        query = SearchQuery(q)
-        keyword_results = queryset.filter(search_vector=query).annotate(rank=SearchRank('search_vector', query)).order_by('-rank')
-        if keyword_results.exists():
-            return keyword_results
-
+        # 1. Try a strict semantic search first
         semantic_results = self._semantic_search(q)
-        if semantic_results.exists():
+        
+        # If we have at least 3 highly relevant papers, serve them immediately
+        if semantic_results.count() >= 3:
             return semantic_results
 
-        fetch_and_ingest(q, per_page=10, sort_by_recency=False)  # nothing local at all — fetch live, cache permanently
+        # 2. If the local index is weak, trigger JIT Ingestion
+        print(f"JIT TRIGGERED: Weak local index for '{q}'. Fetching from OpenAlex...")
+        fetch_and_ingest(q, per_page=10, sort_by_recency=False) 
+        
+        # 3. Re-run the semantic search to return the newly ingested data
         return self._semantic_search(q)
 
-    def _semantic_search(self, query_text, limit=20, max_distance=0.75):
+    def _semantic_search(self, query_text, limit=20, max_distance=0.40):
         query_vector = compute_embedding(query_text)
         
         results = (

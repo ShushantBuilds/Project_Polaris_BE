@@ -185,10 +185,11 @@ class PasswordResetConfirmView(APIView):
         for token in OutstandingToken.objects.filter(user=user):
             BlacklistedToken.objects.get_or_create(token=token)
 
-        send_mail(
-            subject='Your Polaris password was changed',
-            message="Your password was just reset. If this wasn't you, contact support immediately.",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-        )
+        # send_mail(
+        #     subject='Your Polaris password was changed',
+        #     message="Your password was just reset. If this wasn't you, contact support immediately.",
+        #     from_email=settings.DEFAULT_FROM_EMAIL,
+        #     recipient_list=[user.email],
+        # )
+        send_password_changed_alert(user.email)
         return Response({'message': 'Password reset successfully. You can now log in.'})

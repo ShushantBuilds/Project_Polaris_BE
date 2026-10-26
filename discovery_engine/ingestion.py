@@ -32,9 +32,6 @@ def _make_room(needed_slots):
 
 
 def fetch_and_ingest(query_text, per_page=10, sort_by_recency=True, tag_with_query=False):
-    """tag_with_query=True: only for the scheduled broad-field seed job (adds one clean category
-    tag like 'Computer Science'). Live search leaves this False — tagging relies entirely on each
-    paper's own OpenAlex concepts, so no raw search phrase ever becomes a tag."""
     _make_room(per_page)
 
     seed_tag = None
@@ -51,7 +48,9 @@ def fetch_and_ingest(query_text, per_page=10, sort_by_recency=True, tag_with_que
     except requests.RequestException:
         return 0
 
-    added = 0
+    parsed_items = []
+    texts_to_embed = []
+    
     for work in response.json().get('results', []):
         external_id = work.get('id')
         if not external_id or ContentItem.objects.filter(external_id=external_id).exists():
@@ -61,20 +60,38 @@ def fetch_and_ingest(query_text, per_page=10, sort_by_recency=True, tag_with_que
         abstract = reconstruct_abstract(work.get('abstract_inverted_index'))
         url = (work.get('primary_location') or {}).get('landing_page_url') or work.get('doi') or ''
 
+        parsed_items.append({
+            'title': title,
+            'abstract': abstract,
+            'url': url,
+            'external_id': external_id,
+            'concepts': work.get('concepts', [])
+        })
+        
+        texts_to_embed.append(f"{title}. {abstract}")
+
+    if not parsed_items:
+        return 0
+
+    batch_embeddings = compute_embedding(texts_to_embed)
+
+    added = 0
+    for item_data, embedding_vector in zip(parsed_items, batch_embeddings):
+        abstract_text = item_data['abstract']
+        
         item = ContentItem.objects.create(
-            title=title,
-            description=abstract[:2000] if abstract else 'No abstract available.',
-            ai_summary=abstract if abstract else 'No abstract available.',
-            url=url,
-            external_id=external_id,
+            title=item_data['title'],
+            description=abstract_text[:2000] if abstract_text else 'No abstract available.',
+            ai_summary=abstract_text if abstract_text else 'No abstract available.',
+            url=item_data['url'],
+            external_id=item_data['external_id'],
+            embedding=embedding_vector  
         )
-        item.embedding = compute_embedding(f"{title}. {abstract}")
-        item.save(update_fields=['embedding'])
 
         if seed_tag:
             item.tags.add(seed_tag)
 
-        top_concepts = sorted(work.get('concepts', []), key=lambda c: c.get('score', 0), reverse=True)[:3]
+        top_concepts = sorted(item_data['concepts'], key=lambda c: c.get('score', 0), reverse=True)[:3]
         for concept in top_concepts:
             concept_name = concept.get('display_name', '').strip()
             if concept_name:
@@ -83,4 +100,5 @@ def fetch_and_ingest(query_text, per_page=10, sort_by_recency=True, tag_with_que
                 item.tags.add(tag)
 
         added += 1
+        
     return added
