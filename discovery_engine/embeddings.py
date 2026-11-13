@@ -1,36 +1,48 @@
 import os
-import gc
+import requests
 import numpy as np
+from decouple import config
 
-os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1' 
+API_URL = (
+    "https://router.huggingface.co/hf-inference/models/"
+    "sentence-transformers/all-MiniLM-L6-v2/pipeline/feature-extraction"
+)
 
-_model = None
-
-def get_model():
-    global _model
-    if _model is None:
-        import torch
-        from sentence_transformers import SentenceTransformer
-        
-        os.environ["OMP_NUM_THREADS"] = "1"
-        os.environ["MKL_NUM_THREADS"] = "1"
-        torch.set_num_threads(1)
-        
-        _model = SentenceTransformer('all-MiniLM-L6-v2')
-    return _model
+def get_hf_token():
+    token = config("HF_API_KEY", default=os.environ.get("HF_API_KEY"))
+    if not token:
+        raise ValueError("HF_API_KEY environment variable is missing.")
+    return token
 
 def compute_embedding(text_or_texts):
     """
-    Accepts a single string or a list of strings.
-    Batch processing a list is exponentially faster than sequential calls.
+    Accepts a single string or a list of strings and returns
+    L2-normalized 384-dimensional embeddings via Hugging Face API.
     """
-    vector = get_model().encode(text_or_texts, convert_to_numpy=True, normalize_embeddings=True)
-    result = vector.tolist()
-    
-    del vector
-    gc.collect()
-    
-    return result
+    headers = {"Authorization": f"Bearer {get_hf_token()}"}
+    payload = {
+        "inputs": text_or_texts,
+        "options": {"wait_for_model": True}
+    }
+
+    response = requests.post(API_URL, headers=headers, json=payload, timeout=30)
+
+    if response.status_code != 200:
+        raise RuntimeError(f"Hugging Face API Error ({response.status_code}): {response.text}")
+
+    arr = np.array(response.json(), dtype=np.float32)
+
+    # L2-normalize to match normalize_embeddings=True
+    if arr.ndim == 1:
+        norm = np.linalg.norm(arr)
+        if norm > 0:
+            arr = arr / norm
+    elif arr.ndim == 2:
+        norms = np.linalg.norm(arr, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0
+        arr = arr / norms
+
+    return arr.tolist()
 
 def cosine_similarity(vec_a, vec_b):
     return float(np.dot(np.array(vec_a), np.array(vec_b)))
