@@ -91,7 +91,7 @@ class ContentItemViewSet(viewsets.ModelViewSet):
         # 2. If the local index is weak, trigger JIT Ingestion
         print(f"JIT TRIGGERED: Weak local index for '{q}'. Fetching from OpenAlex...", flush=True)
         try:
-            fetch_and_ingest(q, per_page=10, sort_by_recency=False)
+            fetch_and_ingest(q, per_page=5, sort_by_recency=False)
         except Exception as e:
             print(f"JIT INGESTION ERROR for '{q}': {e}", flush=True)
         
