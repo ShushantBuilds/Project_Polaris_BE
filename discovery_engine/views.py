@@ -17,6 +17,7 @@ from .embeddings import compute_embedding
 from .ingestion import fetch_and_ingest
 import random
 from datetime import date
+from django.db.models import Q, F, Case, When, Count
 
 class TagViewSet(viewsets.ModelViewSet):
     queryset = Tag.objects.all()
@@ -53,8 +54,9 @@ class RecommendationView(APIView):
         return Response(data)
 
 
+
+
 class ContentItemViewSet(viewsets.ModelViewSet):
-    # ADDING THIS ATTRIBUTE fixes the AssertionError permanently
     queryset = ContentItem.objects.all()
     
     serializer_class = ContentItemSerializer
@@ -68,35 +70,45 @@ class ContentItemViewSet(viewsets.ModelViewSet):
         return [permissions.IsAuthenticated()]
 
     def get_queryset(self):
-        # Override the base queryset to inject our custom AI search logic
         queryset = ContentItem.objects.all()
         q = self.request.query_params.get('search')
         
         if not q:
             return queryset
 
-        # 1. Try a strict semantic search first
-        semantic_results = self._semantic_search(q)
+        # Compute the query embedding once instead of twice
+        query_vector = compute_embedding(q)
+
+        # 1. Try semantic search first (0.55 distance = 0.45+ cosine similarity)
+        semantic_results = self._semantic_search(
+            query_vector, query_text=q, max_distance=0.55
+        )
         
-        # If we have at least 3 highly relevant papers, serve them immediately
+        # If we have at least 3 relevant papers, serve them immediately
         if semantic_results.count() >= 3:
             return semantic_results
 
         # 2. If the local index is weak, trigger JIT Ingestion
-        print(f"JIT TRIGGERED: Weak local index for '{q}'. Fetching from OpenAlex...")
-        fetch_and_ingest(q, per_page=10, sort_by_recency=False) 
+        print(f"JIT TRIGGERED: Weak local index for '{q}'. Fetching from OpenAlex...", flush=True)
+        try:
+            fetch_and_ingest(q, per_page=10, sort_by_recency=False)
+        except Exception as e:
+            print(f"JIT INGESTION ERROR for '{q}': {e}", flush=True)
         
-        # 3. Re-run the semantic search to return the newly ingested data
-        return self._semantic_search(q)
+        return self._semantic_search(
+            query_vector, query_text=q, max_distance=0.65
+        )
 
-    def _semantic_search(self, query_text, limit=20, max_distance=0.40):
-        query_vector = compute_embedding(query_text)
-        
+    def _semantic_search(self, query_vector, query_text="", limit=20, max_distance=0.55):
         results = (
             ContentItem.objects
             .exclude(embedding__isnull=True)
             .annotate(distance=CosineDistance('embedding', query_vector))
-            .filter(distance__lte=max_distance)
+            .filter(
+                Q(distance__lte=max_distance) |
+                Q(title__icontains=query_text) |
+                Q(description__icontains=query_text)
+            )
             .order_by('distance')
         )
         return results
@@ -193,7 +205,7 @@ class DailySearchSuggestionsView(APIView):
         
         return Response(rng.sample(eligible_tags, count))
 
-RELEVANCE_THRESHOLD = 0.50 
+RELEVANCE_THRESHOLD = 0.62 
 
 class RAGAssistantView(APIView):
     permission_classes = [permissions.AllowAny] 
