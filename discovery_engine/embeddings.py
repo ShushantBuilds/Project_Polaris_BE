@@ -1,4 +1,5 @@
 import os
+import traceback
 import requests
 import numpy as np
 from decouple import config
@@ -9,40 +10,53 @@ API_URL = (
 )
 
 def get_hf_token():
-    token = config("HF_API_KEY", default=os.environ.get("HF_API_KEY"))
+    token = config("HF_API_KEY", default=os.environ.get("HF_API_KEY", ""))
+    token = str(token).strip().strip('"').strip("'")
     if not token:
+        print("CRITICAL ERROR: HF_API_KEY is missing in Render Environment!", flush=True)
         raise ValueError("HF_API_KEY environment variable is missing.")
     return token
 
 def compute_embedding(text_or_texts):
-    """
-    Accepts a single string or a list of strings and returns
-    L2-normalized 384-dimensional embeddings via Hugging Face API.
-    """
-    headers = {"Authorization": f"Bearer {get_hf_token()}"}
-    payload = {
-        "inputs": text_or_texts,
-        "options": {"wait_for_model": True}
-    }
+    try:
+        is_single = isinstance(text_or_texts, str)
+        inputs = [text_or_texts] if is_single else list(text_or_texts)
 
-    response = requests.post(API_URL, headers=headers, json=payload, timeout=30)
+        headers = {"Authorization": f"Bearer {get_hf_token()}"}
+        payload = {
+            "inputs": inputs,
+            "options": {"wait_for_model": True}
+        }
 
-    if response.status_code != 200:
-        raise RuntimeError(f"Hugging Face API Error ({response.status_code}): {response.text}")
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=30)
 
-    arr = np.array(response.json(), dtype=np.float32)
+        if response.status_code != 200:
+            print(f"HF API ERROR ({response.status_code}): {response.text}", flush=True)
+            raise RuntimeError(f"HF API Error {response.status_code}: {response.text}")
 
-    # L2-normalize to match normalize_embeddings=True
-    if arr.ndim == 1:
-        norm = np.linalg.norm(arr)
-        if norm > 0:
-            arr = arr / norm
-    elif arr.ndim == 2:
+        arr = np.array(response.json(), dtype=np.float32)
+
+        # Handle 3D token embeddings if returned
+        if arr.ndim == 3:
+            arr = np.mean(arr, axis=1)
+        if arr.ndim == 1:
+            arr = arr.reshape(1, -1)
+
+        # L2-normalize vectors
         norms = np.linalg.norm(arr, axis=1, keepdims=True)
         norms[norms == 0] = 1.0
         arr = arr / norms
 
-    return arr.tolist()
+        if is_single:
+            return arr[0].tolist()  # Flat 1D list of 384 floats for single query
+        return arr.tolist()         # 2D list of (N, 384) floats for batch
+
+    except Exception as e:
+        print(f"EMBEDDING EXCEPTION: {e}", flush=True)
+        traceback.print_exc()
+        raise
 
 def cosine_similarity(vec_a, vec_b):
-    return float(np.dot(np.array(vec_a), np.array(vec_b)))
+    a = np.array(vec_a, dtype=np.float32).flatten()
+    b = np.array(vec_b, dtype=np.float32).flatten()
+    return float(np.dot(a, b))
